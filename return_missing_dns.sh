@@ -1,52 +1,30 @@
 #!/bin/bash
 
-# Reseller username
-RESELLER=truehost
+# Set the reseller username
+reseller_user=truehost
 
-echo "📦 Getting IPs assigned to reseller '$RESELLER'..."
-reseller_ip=$(whmapi1 getresellerips user=$RESELLER | grep -E '^\s+- ' | awk '{print $2}')
+# Get the reseller IP once
+reseller_ip=$(whmapi1 getresellerips user=$reseller_user | grep -E '^\s+- ' | awk '{print $2}' | head -n1)
 
-if [[ -z "$reseller_ip" ]]; then
-    echo "❌ No IPs found for reseller $RESELLER. Exiting."
-    exit 1
+if [ -z "$reseller_ip" ]; then
+  echo "❌ Failed to get reseller IP for $reseller_user"
+  exit 1
 fi
 
-echo "✅ Reseller IP: $reseller_ip"
-echo "🔍 Checking for domains missing DNS zones..."
+echo "✅ Using reseller IP: $reseller_ip"
 
-# Get all domains
-all_domains=$(awk '{print $1}' /etc/userdomains | sort -u)
+# Loop through all cPanel users
+for user in $(ls /var/cpanel/users); do
+  # Get the user's main domain
+  domain=$(awk -F= '/^DNS=/{print $2}' /var/cpanel/users/$user)
 
-# Counter
-created_count=0
+  # Skip if the DNS zone already exists
+  if [ -f "/var/named/${domain}.db" ]; then
+    continue
+  fi
 
-for domain in $all_domains; do
-    if ! whmapi1 dumpzone domain=$domain >/dev/null 2>&1; then
-        echo "❌ Missing DNS zone for: $domain"
+  echo "➕ Creating DNS zone for $domain (user: $user)"
 
-        # Get the cPanel user who owns the domain
-        user=$(grep -w "$domain" /etc/userdomains | awk '{print $2}')
-
-        if [[ -z "$user" ]]; then
-            echo "⚠️ Could not find user for $domain. Skipping."
-            continue
-        fi
-
-        # Create DNS zone using /scripts/adddns
-        echo "🔧 Creating DNS zone for $domain (user: $user)..."
-        /scripts/adddns --domain="$domain" --ip="$reseller_ip" --user="$user" >/dev/null 2>&1
-
-        if [[ $? -eq 0 ]]; then
-            echo "✅ Zone created and assigned IP: $reseller_ip"
-            ((created_count++))
-        else
-            echo "❌ Failed to create zone for $domain"
-        fi
-    fi
+  # Create the DNS zone with owner
+  /scripts/adddns --domain=$domain --ip=$reseller_ip --owner=$user
 done
-
-# Sync DNS cluster
-echo "🔁 Syncing all DNS zones to cluster..."
-/scripts/dnscluster syncall
-
-echo "✅ Done. Created $created_count zone(s) and synced DNS."
