@@ -16,5 +16,5 @@ done
 
 # Sync all DNS zones to the cluster
 echo "Syncing all DNS zones to cluster..."
-/scripts/dnscluster --syncall
+/scripts/dnscluster syncall
 echo "✅ DNS sync complete."
