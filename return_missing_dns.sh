@@ -28,3 +28,5 @@ for user in $(ls /var/cpanel/users); do
   # Create the DNS zone with owner
   /scripts/adddns --domain=$domain --ip=$reseller_ip --owner=$user
 done
+
+/scripts/dnscluster syncall
